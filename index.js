@@ -114,7 +114,6 @@ function extractBlogIdsFromSettings(html) {
 }
 
 function extractPostIdFromEpisodePage(html) {
-    // Fixed regex: replaced &lt; &gt; with < >
     const postIdRegex = /<div[^>]*id="kisskh"[^>]*data-post-id="(\d+)"[^>]*>/;
     const match = html.match(postIdRegex);
     return match && match[1] ? match[1] : null;
@@ -298,22 +297,10 @@ builder.defineSubtitlesHandler(async ({ type, id }) => {
     return { subtitles: [] };
 });
 
-// --- VERCEL EXPORT WITH CORS FIX ---
+// --- VERCEL EXPORT (Simplified) ---
 const router = getRouter(builder.getInterface());
 
 module.exports = (req, res) => {
-    // Force CORS headers on every request
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-
-    // Handle preflight requests (browsers/TVs ask for this first)
-    if (req.method === 'OPTIONS') {
-        res.statusCode = 200;
-        res.end();
-        return;
-    }
-
     router(req, res, () => {
         res.statusCode = 404;
         res.end();
