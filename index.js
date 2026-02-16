@@ -114,6 +114,7 @@ function extractBlogIdsFromSettings(html) {
 }
 
 function extractPostIdFromEpisodePage(html) {
+    // Fixed regex: replaced HTML entities with real characters
     const postIdRegex = /<div[^>]*id="kisskh"[^>]*data-post-id="(\d+)"[^>]*>/;
     const match = html.match(postIdRegex);
     return match && match[1] ? match[1] : null;
