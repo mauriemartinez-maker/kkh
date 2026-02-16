@@ -1,10 +1,14 @@
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const url = require('url');
+
+// !!! THIS IS YOUR VERCEL URL !!!
+const PROXY_URL = "https://weatherapitest9921.vercel.app"; 
 
 const manifest = {
     id: 'community.kisskh.unified',
-    version: '7.3.0',
+    version: '7.3.6',
     name: "KissKH Videos + Spanish Subs",
     description: 'Videos and Spanish subtitles from KissKH',
     resources: ['stream', 'subtitles'],
@@ -24,18 +28,6 @@ function fixSpanishChars(text) {
         .replace(/Ã³/g, 'ó').replace(/Ãº/g, 'ú').replace(/Ã‘/g, 'Ñ')
         .replace(/Ã±/g, 'ñ').replace(/Â¿/g, '¿').replace(/Â¡/g, '¡')
         .replace(/Ã¼/g, 'ü');
-}
-
-async function fetchAndFixSubtitle(url) {
-    try {
-        const response = await axios.get(url, { responseType: 'text', timeout: 10000 });
-        const fixedContent = fixSpanishChars(response.data);
-        const base64 = Buffer.from(fixedContent, 'utf8').toString('base64');
-        return `data:text/vtt;charset=utf-8;base64,${base64}`;
-    } catch (e) {
-        console.error(`Subtitle fetch error: ${e.message}`);
-        return url;
-    }
 }
 
 async function findShowOnKissKH(showName) {
@@ -114,7 +106,6 @@ function extractBlogIdsFromSettings(html) {
 }
 
 function extractPostIdFromEpisodePage(html) {
-    // Fixed regex: replaced HTML entities with real characters
     const postIdRegex = /<div[^>]*id="kisskh"[^>]*data-post-id="(\d+)"[^>]*>/;
     const match = html.match(postIdRegex);
     return match && match[1] ? match[1] : null;
@@ -280,10 +271,11 @@ builder.defineSubtitlesHandler(async ({ type, id }) => {
         if (subtitleUrls.length > 0) {
             const subtitles = [];
             for (const url of subtitleUrls) {
-                const fixedUrl = await fetchAndFixSubtitle(url);
+                // PROXY CHANGE: We do NOT fetch here. We just return the proxy link.
+                const proxyLink = `${PROXY_URL}/sub.vtt?from=${encodeURIComponent(url)}`;
                 subtitles.push({
                     id: url,
-                    url: fixedUrl,
+                    url: proxyLink,
                     lang: 'spa',
                     label: 'Spanish (KissKH)'
                 });
@@ -298,10 +290,50 @@ builder.defineSubtitlesHandler(async ({ type, id }) => {
     return { subtitles: [] };
 });
 
-// --- VERCEL EXPORT (Simplified) ---
+// --- VERCEL EXPORT WITH PROXY & CORS ---
 const router = getRouter(builder.getInterface());
 
-module.exports = (req, res) => {
+module.exports = async (req, res) => {
+    // 1. Force CORS headers on every request
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+
+    // 2. Handle preflight requests
+    if (req.method === 'OPTIONS') {
+        res.statusCode = 200;
+        res.end();
+        return;
+    }
+
+    // 3. PROXY HANDLER: Intercept /sub.vtt requests
+    const parsedUrl = url.parse(req.url, true);
+    if (parsedUrl.pathname === '/sub.vtt') {
+        const targetUrl = parsedUrl.query.from;
+        if (!targetUrl) {
+            res.statusCode = 400;
+            res.end('Missing url');
+            return;
+        }
+
+        try {
+            // Fetch the original subtitle
+            const response = await axios.get(targetUrl, { responseType: 'text', timeout: 10000 });
+            // Fix the characters
+            const fixedContent = fixSpanishChars(response.data);
+            
+            // Serve it as a file
+            res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+            res.statusCode = 200;
+            res.end(fixedContent);
+        } catch (e) {
+            res.statusCode = 500;
+            res.end('Error fetching subtitle');
+        }
+        return;
+    }
+
+    // 4. Standard Stremio Router
     router(req, res, () => {
         res.statusCode = 404;
         res.end();
